@@ -9,7 +9,7 @@
 
 Пример работы класса можно посмотреть в [здесь](https://github.com/dimalunin2016/Anomaly/blob/master/Anomaly%20generator.ipynb).
 
-2) `RobustRandomCutForest.py` - baseline модель. Основана на алгоритме RobustRandomCutForest от компании "Амазон" ([Оригинальная статья](http://proceedings.mlr.press/v48/guha16.pdf), [сайт реализации](https://klabum.github.io/rrcf/)) и на Lazy Drifting Conformal Detector (LDCD) (Идея описана в [статье Евгения Бурнаева](https://arxiv.org/pdf/1706.03412.pdf)). Из плюсов: 
+2) `RobustRandomCutForest.py` - baseline модель. Основана на алгоритме `RobustRandomCutForest` от компании "Амазон" ([Оригинальная статья](http://proceedings.mlr.press/v48/guha16.pdf), [сайт реализации](https://klabum.github.io/rrcf/)) и на Lazy Drifting Conformal Detector (LDCD) (Идея описана в [статье Евгения Бурнаева](https://arxiv.org/pdf/1706.03412.pdf)). Из плюсов: 
 * Предсказания происходят онлайн.
 * Модель постоянно учится.
 * Алгоритм работает без меток данных.
