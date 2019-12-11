@@ -9,7 +9,7 @@ import matplotlib.patches as mpatches
 class Anomaly:
     """Types of anomalies"""
 
-    novelty = "novelty"
+    shift = "shift"
     collective = "collective"
     individual = "individual"
 
@@ -102,7 +102,7 @@ class AnomalyGenerator:
                                      anomaly_minsize,
                                      anomaly_maxsize,
                                      generator,
-                                     previous_novelty_in_columns,
+                                     previous_shift_in_columns,
                                      data_size) -> tp.Dict[str, tp.Any]:
         """Constructs parameters for new anomaly (which already has place)
         :param current_anomaly_place: start place of anomaly
@@ -111,7 +111,7 @@ class AnomalyGenerator:
         :param anomaly_minsize: minimum size of anomaly length
         :param anomaly_maxsize: maximum size of anomaly length
         :param generator: generator to generate random
-        :param previous_novelty_in_columns: previous novelty start place in this column
+        :param previous_shift_in_columns: previous shift start place in this column
         :param data_size: size of all data
         :return: return parameters for new anomaly
         """
@@ -132,12 +132,12 @@ class AnomalyGenerator:
         for column in anomaly_columns:
             anomalies_in_columns[column] = generator.choice(
                 types_of_outliers_for_columns[column])
-            if anomalies_in_columns[column] == Anomaly.novelty:
-                if current_anomaly_place - previous_novelty_in_columns[column] < 0.33 * data_size:
+            if anomalies_in_columns[column] == Anomaly.shift:
+                if current_anomaly_place - previous_shift_in_columns[column] < 0.33 * data_size:
                     anomalies_in_columns[column] = generator.choice(
-                        list(set(types_of_outliers_for_columns[column]) - {Anomaly.novelty}))
+                        list(set(types_of_outliers_for_columns[column]) - {Anomaly.shift}))
                 else:
-                    previous_novelty_in_columns[column] = current_anomaly_place
+                    previous_shift_in_columns[column] = current_anomaly_place
                 
         anomaly_params["anomalies_in_columns"] = anomalies_in_columns
         return anomaly_params
@@ -149,7 +149,7 @@ class AnomalyGenerator:
         :param types_of_outliers_for_columns: dict of which types of anomalies are able for each column
         """
         self.anomalies = []
-        previous_novelty_in_columns = {column: -self.size for column in self.data_columns}
+        previous_shift_in_columns = {column: -self.size for column in self.data_columns}
         for current_anomaly_place, next_anomaly_place in \
                 AnomalyGenerator.__iterate_by_two_elements(anomaly_places + [self.size]):
             self.anomalies.append(
@@ -159,7 +159,7 @@ class AnomalyGenerator:
                     self.anomaly_minsize,
                     self.anomaly_maxsize,
                     self.generator,
-                    previous_novelty_in_columns,
+                    previous_shift_in_columns,
                     self.size))
     
     def __find_anomaly_places(self, distance_between_anomalies,
@@ -243,13 +243,13 @@ class AnomalyGenerator:
         self.dataframe[column].loc[start_anomaly_place:
                                    end_anomaly_place] = new_values
 
-    def __apply_new_novelty_anomaly(self, column, 
+    def __apply_new_shift_anomaly(self, column, 
                                     start_anomaly_place,
                                     end_anomaly_place) -> None:
-        """Add to data one new novelty
+        """Add to data one new shift
         :param column: column with anomaly
-        :param start_anomaly_place: starting place of novelty
-        :param end_anomaly_place: ending place of novelty
+        :param start_anomaly_place: starting place of shift
+        :param end_anomaly_place: ending place of shift
         """
         size = end_anomaly_place - start_anomaly_place
         mean_before = (np.max(self.start_dataframe[column].iloc[:start_anomaly_place]) - 
@@ -259,14 +259,14 @@ class AnomalyGenerator:
             self.dataframe[column].loc[place] += adding * (ind / size)
         self.dataframe[column].loc[end_anomaly_place:] += adding
     
-    def __apply_all_novelty_anomalies(self) -> None:
+    def __apply_all_shift_anomalies(self) -> None:
         """Constructs all novelties"""
 
         for anomaly in self.anomalies:
             column_anomalies = anomaly["anomalies_in_columns"]
             for column in column_anomalies:
-                if column_anomalies[column] == Anomaly.novelty:
-                    self.__apply_new_novelty_anomaly(column, 
+                if column_anomalies[column] == Anomaly.shift:
+                    self.__apply_new_shift_anomaly(column, 
                                                      anomaly['start_index'],
                                                      anomaly['end_index'])
 
@@ -296,7 +296,7 @@ class AnomalyGenerator:
         """
         if self.anomalies_has_already_applied:
             return
-        self.__apply_all_novelty_anomalies()
+        self.__apply_all_shift_anomalies()
         self.__prepare_collective_anomalies(smoothing_level_for_context_anomaly)
         self.anomalies_has_already_applied = True
         for anomaly in self.anomalies:
@@ -395,12 +395,12 @@ class AnomalyGenerator:
                                  current_df,
                                  draw_between,
                                  handles) -> None:
-        colors = {Anomaly.novelty: "cyan",
+        colors = {Anomaly.shift: "cyan",
                   Anomaly.individual: "red",
                   Anomaly.collective: "black",
                   None: "lime"}
         red_patch = mpatches.Patch(color='red', alpha=0.3, label='Individual anomaly')
-        cyan_patch = mpatches.Patch(color='cyan', alpha=0.3, label='Novelty')
+        cyan_patch = mpatches.Patch(color='cyan', alpha=0.3, label='Shift anomaly')
         black_patch = mpatches.Patch(color='black', alpha=0.3, label='Collective anomaly')
         lime_patch = mpatches.Patch(color='lime', alpha=0.3, label='Anomaly not in this column')
         patches = {"cyan": cyan_patch,
