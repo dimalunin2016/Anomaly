@@ -23,7 +23,7 @@ def run_model_on_generator(model_class: AnomalyModel, generator: AnomalyGenerato
     return pvals, np.where(pvals > alpha)[0]
 
 
-def show_model_results(column_name: str, model_name: str, generator: AnomalyGenerator, pvalues, alpha: float = 0.95):
+def show_model_results(column_name: str, model_name: str, generator: AnomalyGenerator, pvalues, alpha: float = 0.99):
     """Visualize results after run_model_on_generator
     :param column_name: column to show
     :param model_name: model name, str

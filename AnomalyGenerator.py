@@ -12,6 +12,7 @@ class Anomaly:
     shift = "shift"
     collective = "collective"
     individual = "individual"
+    novelty = "novelty"
 
 
 class AnomalyGenerator:
@@ -20,7 +21,7 @@ class AnomalyGenerator:
     def __init__(self):
         super().__init__()
         self.current_index_to_yield = 0
-        self.anomalies = {}
+        self.anomalies = []
         self.anomalies_has_already_applied = False
         self.dataframe = None
 
@@ -148,7 +149,6 @@ class AnomalyGenerator:
         :param anomaly_places: array of start places of anomalies
         :param types_of_outliers_for_columns: dict of which types of anomalies are able for each column
         """
-        self.anomalies = []
         previous_shift_in_columns = {column: -self.size for column in self.data_columns}
         for current_anomaly_place, next_anomaly_place in \
                 AnomalyGenerator.__iterate_by_two_elements(anomaly_places + [self.size]):
@@ -172,20 +172,33 @@ class AnomalyGenerator:
         from_ind = length_of_normal_data_in_start
         to_ind = self.size - self.anomaly_maxsize
         places = set()
-        intervals = [(from_ind, to_ind)]
-        for ind in range(self.number_of_anomalies):
-            idx = self.generator.choice(len(intervals))
+        intervals = []
+
+        self.anomalies = sorted(self.anomalies, key=lambda x: x["start_index"])
+        for real_anomaly in self.anomalies:
+            interval = (from_ind, real_anomaly["start_index"] - distance_between_anomalies)
+            if interval[0] < interval[1]:
+                intervals.append(interval)
+            from_ind = real_anomaly["end_index"] + 1
+            assert(from_ind < to_ind)
+
+        intervals.append((from_ind, to_ind))
+        for ind in range(self.number_of_anomalies -
+                         len(self.anomalies)):
+            probs = np.array([x[1] - x[0] for x in intervals])
+            # print(probs, probs / np.sum(probs))
+            probs = probs / np.sum(probs)
+            idx = self.generator.choice(len(intervals), p=probs)
             interval = intervals[idx]
             intervals.remove(interval)
             value = self.generator.randint(low=interval[0], high=interval[1])
             places.add(value)
+
             interval_new_a = (interval[0], value - distance_between_anomalies)
-            size_a = value - interval[0] - distance_between_anomalies
             interval_new_b = (value + distance_between_anomalies, interval[1])
-            size_b = interval[1] - value - distance_between_anomalies
-            if size_a > 0:
+            if interval_new_a[0] < interval_new_a[1]:
                 intervals.append(interval_new_a)
-            if size_b > 0:
+            if interval_new_b[0] < interval_new_b[1]:
                 intervals.append(interval_new_b)
         return sorted(list(places))
 
@@ -218,6 +231,7 @@ class AnomalyGenerator:
 
         anomaly_places = self.__find_anomaly_places(distance_between_anomalies, length_of_normal_data_in_start)
         self.__add_types_of_anomalies(anomaly_places, types_of_outliers_for_columns)
+        self.anomalies = sorted(self.anomalies, key=lambda x: x["start_index"])
         assert self.number_of_anomalies == len(self.anomalies)
   
     def __prepare_collective_anomalies(self, smoothing_level=0.01) -> None:
@@ -244,8 +258,8 @@ class AnomalyGenerator:
                                    end_anomaly_place] = new_values
 
     def __apply_new_shift_anomaly(self, column, 
-                                    start_anomaly_place,
-                                    end_anomaly_place) -> None:
+                                  start_anomaly_place,
+                                  end_anomaly_place) -> None:
         """Add to data one new shift
         :param column: column with anomaly
         :param start_anomaly_place: starting place of shift
@@ -254,7 +268,7 @@ class AnomalyGenerator:
         size = end_anomaly_place - start_anomaly_place
         mean_before = (np.max(self.start_dataframe[column].iloc[:start_anomaly_place]) - 
                        np.min(self.start_dataframe[column].iloc[:start_anomaly_place]))
-        adding = self.generator.choice([-1, 1]) * self.generator.uniform(mean_before * 0.4, mean_before * 0.55)
+        adding = self.generator.choice([-1, 1]) * self.generator.uniform(mean_before * 0.55, mean_before * 0.75)
         for ind, place in enumerate(range(start_anomaly_place, end_anomaly_place)):
             self.dataframe[column].loc[place] += adding * (ind / size)
         self.dataframe[column].loc[end_anomaly_place:] += adding
@@ -313,15 +327,32 @@ class AnomalyGenerator:
 
     def get_size(self) -> int:
         return self.size
-    
-    def add_anomalies(self, types_of_outliers_for_columns, *,
-                      length_of_normal_data_in_start=1000,
-                      pct_of_outliers=0.005,
-                      distance_between_anomalies=None,
-                      number_of_anomalies=None,
-                      minsize=10,
-                      random_state=42,
-                      smoothing_level_for_context_anomaly=0.01) -> None:
+
+    def get_data_dimension(self) -> int:
+        return len(self.data_columns)
+
+    def add_real_data_anomaly(self, *, start_index,
+                              anomaly_type,
+                              end_index=None, size=None) -> None:
+        assert(not self.anomalies_has_already_applied)
+        anomaly = {"start_index": start_index,
+                   "anomalies_in_columns": anomaly_type}
+        if size is not None:
+            anomaly["size"] = size
+            anomaly["end_index"] = start_index + size
+        else:
+            anomaly["end_index"] = end_index
+            anomaly["size"] = end_index - start_index
+        self.anomalies.append(anomaly)
+
+    def generate_anomalies(self, types_of_outliers_for_columns, *,
+                           length_of_normal_data_in_start=1000,
+                           pct_of_outliers=0.005,
+                           distance_between_anomalies=None,
+                           number_of_anomalies=None,
+                           minsize=10,
+                           random_state=42,
+                           smoothing_level_for_context_anomaly=0.01) -> None:
         """Constructs and applies anomaly to data, but do it once
         :param types_of_outliers_for_columns: dict of which types of anomalies are able for each column
         (types must be parameters from Anomaly class)
@@ -347,9 +378,8 @@ class AnomalyGenerator:
 
     def reset(self) -> None:
         """Removes all anomalies from data"""
-
         self.current_index_to_yield = 0
-        self.anomalies = {}
+        self.anomalies = []
         self.anomalies_has_already_applied = False
         self.dataframe = self.start_dataframe.copy()
     
@@ -372,12 +402,15 @@ class AnomalyGenerator:
                        draw_between=(max(start - size * 5, 0), min(end + size * 5, self.size)),
                        predicted_anomaly_points=predicted_anomaly_points)
         
-    def get_new_data(self) -> tp.Any:
+    def get_new_data(self, from_beginning=True) -> tp.Any:
         """Generate new data with anomaly (anomalies must be added before)"""
-
-        for ind in range(self.size):
+        if from_beginning:
+            self.current_index_to_yield = 0
+        start_ind = self.current_index_to_yield
+        for ind in range(start_ind, self.size):
             self.current_index_to_yield = ind
             yield self.dataframe[self.data_columns].iloc[ind]
+        self.current_index_to_yield = 0
 
     def get_time_values(self, draw_between=None) -> np.ndarray:
         """Get values of time_column"""
@@ -398,15 +431,18 @@ class AnomalyGenerator:
         colors = {Anomaly.shift: "cyan",
                   Anomaly.individual: "red",
                   Anomaly.collective: "black",
+                  Anomaly.novelty: "orange",
                   None: "lime"}
         red_patch = mpatches.Patch(color='red', alpha=0.3, label='Individual anomaly')
         cyan_patch = mpatches.Patch(color='cyan', alpha=0.3, label='Shift anomaly')
         black_patch = mpatches.Patch(color='black', alpha=0.3, label='Collective anomaly')
+        novelty_patch = mpatches.Patch(color="orange", alpha=0.3, label='Novelty anomaly')
         lime_patch = mpatches.Patch(color='lime', alpha=0.3, label='Anomaly not in this column')
         patches = {"cyan": cyan_patch,
                    "black": black_patch,
                    "lime": lime_patch,
-                   "red": red_patch}
+                   "red": red_patch,
+                   "orange": novelty_patch}
         curr_handles = set()
         time_values = self.get_time_values(draw_between)
         for anomaly in self.anomalies:
@@ -463,7 +499,7 @@ class AnomalyGenerator:
                                                            time_values, data,
                                                            predicted_anomaly_points,
                                                            handles)
-        if self.anomalies_has_already_applied:
+        if len(self.anomalies) > 0:
             self.__plot_anomaly_intervals(column_name_to_draw, df, draw_between, handles)
         plt.legend(handles=sorted(handles, key=lambda x: x.get_label()), fontsize=15)
         plt.ylabel(f"Values of '{column_name_to_draw}'", fontsize=15)
