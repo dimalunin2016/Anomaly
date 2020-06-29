@@ -4,7 +4,7 @@ import numpy as np
 
 class NAB:
 
-    def __init__(self, a_tp: float = 1, a_fp: float = -1, a_fn: float = -1, function_const: float = 0.05) -> None:
+    def __init__(self, a_tp: float = 1, a_fp: float = -1, a_fn: float = -1, function_const: float = 5) -> None:
         """Init scorer
         :param a_tp: weight of true positive prediction
         :param a_fp: negative weight of false positive prediction
@@ -24,7 +24,7 @@ class NAB:
         :return: score of current prediction
         """
         if anomaly["start_index"] > predict_anomaly_index:
-            return -1
+            return self.A_fp
         y = predict_anomaly_index - anomaly["end_index"]
         if y > 0:
             const = -self.A_fp

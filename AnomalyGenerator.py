@@ -183,6 +183,13 @@ class AnomalyGenerator:
             assert(from_ind < to_ind)
 
         intervals.append((from_ind, to_ind))
+        cleaned_intervals = []
+        for interval in intervals:
+            if interval[0] >= length_of_normal_data_in_start:
+                cleaned_intervals.append(interval)
+            elif interval[1] > length_of_normal_data_in_start:
+                cleaned_intervals.append((length_of_normal_data_in_start, interval[1]))
+        intervals = cleaned_intervals
         for ind in range(self.number_of_anomalies -
                          len(self.anomalies)):
             probs = np.array([x[1] - x[0] for x in intervals])
@@ -280,9 +287,10 @@ class AnomalyGenerator:
             column_anomalies = anomaly["anomalies_in_columns"]
             for column in column_anomalies:
                 if column_anomalies[column] == Anomaly.shift:
+                    end = int(anomaly['size'] * 0.8) + anomaly['start_index']
                     self.__apply_new_shift_anomaly(column, 
-                                                     anomaly['start_index'],
-                                                     anomaly['end_index'])
+                                                   anomaly['start_index'],
+                                                   end)
 
     def __apply_new_individual_anomaly(self, column, 
                                        start_anomaly_place,
@@ -315,7 +323,7 @@ class AnomalyGenerator:
         self.anomalies_has_already_applied = True
         for anomaly in self.anomalies:
             start_place = anomaly['start_index']
-            end_place = anomaly['end_index']
+            end_place = int(anomaly['size'] * 0.8) + anomaly['start_index']
             column_anomalies = anomaly["anomalies_in_columns"]
             for column in column_anomalies:
                 if column_anomalies[column] == Anomaly.collective:

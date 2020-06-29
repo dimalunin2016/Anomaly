@@ -52,13 +52,12 @@ class SimpleLSTModel(nn.Module):
 
         for i in range(train_size):
             current_ans = answers[:, [i]]
-            h_t, c_t = self.lstm(current_ans[:, 0, :], (h_t, c_t))
+            h_t, c_t = self.lstm(current_ans, (h_t, c_t))
             output = self.linear(h_t)
             outputs += [output]
         for i in range(train_size, train_size + future_size):
             if random.random() > 0.5:
                 output = answers[:, [i]]  # teacher forcing
-                output = output[:, 0, :]
             h_t, c_t = self.lstm(output, (h_t, c_t))
             output = self.linear(h_t)
             outputs += [output]
@@ -90,75 +89,54 @@ class SimpleLSTMAnomalyModel(AnomalyModel):
                  hidden_lstm_size=21, 
                  last_scores_size=8000,
                  small_window_size=10,
-                 train_size=90,
-                 train_data_size=1000,
-                 num_epochs=500,
-                 batch_size=300):
+                 train_size=90):
 
         super().__init__()
-        self.lstm = SimpleLSTModel(in_out_size, hidden_lstm_size, in_out_size)
+        self.lstms = [SimpleLSTModel(1, hidden_lstm_size, 1) for _ in range(in_out_size)]
         self.loss_func = torch.nn.MSELoss()
-        self.optimizer = torch.optim.Adam(self.lstm.parameters(), lr=learning_rate)
+        self.optimizers = [
+            torch.optim.Adam(self.lstms[ind].parameters(), lr=learning_rate) 
+            for ind in range(in_out_size)]
         self.last_scores_size = last_scores_size
         self.small_window_size = small_window_size
         self.future_size = small_window_size
         self.train_size = train_size
-        self.last_scores = []
-        self.small_window_scores = []
-        self.trained = False
-        self.start_predicting = False
-        self.train_data_size = train_data_size
+        self.last_scores = [[] for _ in range(in_out_size)]
         self.train_data = []
-        self.curr_sample = []
-        self.num_epochs = num_epochs
-        self.batch_size = batch_size
-    
-    def train_model(self):
-        self.lstm = train_model_part(self.lstm, 
-                                self.train_data, self.train_size, 
-                                self.future_size,
-                                self.loss_func, self.optimizer, 
-                                num_epochs=self.num_epochs, 
-                                batch_size=self.batch_size)
-        self.train_data = []
+        self.curr_samples = [[] for _ in range(in_out_size)]
         
     def predict_anomaly_proba(self, point)->float:
-        if not self.trained:
-            self.train_data.append(point.tolist())
-            if len(self.train_data) == self.train_data_size:
-                self.train_model()
-                self.trained = True
-            return 0
-        else:
-            self.curr_sample.append(point.tolist())
-            if len(self.curr_sample) > self.train_size + self.future_size:
-                train_sample = self.curr_sample[:-1]
-                self.curr_sample = self.curr_sample[1:]
- 
+        
+        curr_vals = point.tolist()
+        pvals = []
+        for ind, val in enumerate(curr_vals):
+            self.curr_samples[ind].append(val)
+            if len(self.curr_samples[ind]) > self.train_size + self.small_window_size:
+                size = self.train_size + self.small_window_size
+                curr_sample = np.array([self.curr_samples[ind][1:]]).reshape(-1, size)
+                train_sample = np.array([self.curr_samples[ind][:-1]]).reshape(-1, size)
                 y_sample = Variable(torch.from_numpy(
-                    np.array([self.curr_sample])).float())
+                    np.array(curr_sample).reshape(curr_sample.shape[0], 
+                                                  curr_sample.shape[1], 1)).float())
                 train_sample = Variable(torch.from_numpy(
-                    np.array([train_sample])).float())
-
-                y_pred = self.lstm(train_sample, train_size = self.train_size,
-                              future_size = self.future_size)
-                self.optimizer.zero_grad()
+                    np.array(train_sample)).float())
+                self.optimizers[ind].zero_grad()
+                y_pred = self.lstms[ind](train_sample, train_size = self.train_size,
+                                          future_size = self.future_size)
                 loss = self.loss_func(y_pred, y_sample)
                 loss.backward()
-                self.optimizer.step()
-                self.last_scores.append(loss.item())
-                self.small_window_scores.append(loss.item())
-                self.start_predicting = True
-        if len(self.small_window_scores) > self.small_window_size:
-            self.small_window_scores = self.small_window_scores[1:]
-        if len(self.last_scores) > self.last_scores_size:
-            self.last_scores = self.last_scores[1:]
-        if self.start_predicting:
-            big_mu = np.mean(self.last_scores)
-            small_mu = np.mean(self.small_window_scores)
-            sigma = np.std(self.last_scores)
-            pvalue = 2 * sps.norm(0, 1).cdf(abs(small_mu - big_mu) / sigma) - 1
-            return pvalue
-        else:
-            return 0
+                self.optimizers[ind].step()
+                self.last_scores[ind].append(loss.item())
+                self.curr_samples[ind] = self.curr_samples[ind][1:]
+            if len(self.last_scores[ind]) > self.last_scores_size:
+                self.last_scores[ind] = self.last_scores[ind][1:]
+            if len(self.last_scores[ind]) > self.small_window_size:
+                big_mu = np.mean(self.last_scores[ind])
+                small_mu = np.mean(self.last_scores[ind][-self.small_window_size:])
+                sigma = np.std(self.last_scores[ind])
+                pvalue = 2 * sps.norm(0, 1).cdf(abs(small_mu - big_mu) / sigma) - 1
+                pvals.append(pvalue)
+            else:
+                pvals.append(0)
+        return max(pvals)
 
